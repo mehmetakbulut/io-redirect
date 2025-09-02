@@ -3,6 +3,10 @@ name = "io-redirect"
 version = "0.0.1"
 authors = ["Mehmet Akbulut"]
 edition = "2021"
+repository = "https://github.com/mehmetakbulut/io-redirect"
+license = "MIT"
+keywords = ["io", "redirect", "stdout", "stderr"]
+categories = ["filesystem", "embedded", "os"]
 
 [features]
 default = ["libc_on_unix", "windows-sys"]
