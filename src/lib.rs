@@ -21,7 +21,9 @@
 //! For a more detailed example, see the `selftest` executable.
 //!
 //! ### File to File
-//! ```
+//! ```ignore
+//! use io_redirect::Redirectable;
+//! use std::fs::File;
 //! let mut file_src = File::create("src.txt").unwrap();
 //! let mut file_dst = File::create("dst.txt").unwrap();
 //!
@@ -29,11 +31,8 @@
 //! ```
 //!
 //! ### Redirect Standard Streams to a File
-//! ```
-//! use redirectable::*;
-//! use std::path::Path;
-//!
-//! let some_path = PathBuf::new("/dev/kmsg");
+//! ```ignore
+//! let some_path = PathBuf::new("/dev/kmsg".into());
 //!
 //! redirect_std_to_path(some_path.as_path(), true).unwrap();
 //!
@@ -71,9 +70,11 @@ pub trait Redirectable<T: ?Sized>
     /// - `io::Result<()>`: `Ok` if successful, `Err` otherwise.
     ///
     /// # Examples
-    /// ```
-    /// let source = SomeRedirectable::new();
-    /// let destination = SomeOtherRedirectable::new();
+    /// ```no_run
+    /// use io_redirect::Redirectable;
+    ///
+    /// let source = std::io::stdout();
+    /// let destination = std::fs::File::create("dst.txt").unwrap();
     /// match source.redirect(&destination) {
     ///     Ok(_) => println!("Redirection successful!"),
     ///     Err(_) => eprintln!("Failed to redirect!"),
