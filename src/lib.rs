@@ -48,6 +48,7 @@
 //!
 
 use std::io;
+use std::io::{Stdout, Stderr};
 
 /// A trait to represent entities that can have their I/O redirected to a specified target.
 ///
@@ -107,7 +108,6 @@ mod platform
 mod platform
 {
     use super::*;
-    use std::fs::File;
     use std::os::windows::io::AsRawHandle;
 
     pub trait Descriptable: AsRawHandle {}
@@ -149,7 +149,7 @@ mod platform
     mod windows_sys_backend
     {
         use super::*;
-        use windows_sys::Win32::Foundation::{GetLastError, HANDLE};
+        use windows_sys::Win32::Foundation::HANDLE;
         use windows_sys::Win32::System::Console::{SetStdHandle, STD_ERROR_HANDLE, STD_HANDLE, STD_OUTPUT_HANDLE};
 
         impl<T: Descriptable> Redirectable<T> for Stdout {
@@ -244,6 +244,8 @@ mod tests {
     use super::*;
     use std::fs::{File, OpenOptions};
     use std::io::{Read, Write};
+    use std::mem::ManuallyDrop;
+    use libc::close;
 
     #[cfg(any(all(unix, feature = "libc_on_unix"), all(target_os = "windows", feature = "libc_on_windows")))]
     #[test]
@@ -326,48 +328,23 @@ mod tests {
         assert!(err.raw_os_error().is_some());
     }
 
-    #[cfg(unix)]
-    mod unix {
-        use super::*;
-        use libc::close;
-        use std::mem::ManuallyDrop;
+    #[cfg(any(all(unix, feature = "libc_on_unix")))]
+    #[test]
+    fn errors_on_redirect_to_closed_fd() {
         use std::os::fd::AsRawFd;
+        // Arrange
+        let tempdir = tempfile::tempdir().unwrap();
+        let src_file = File::create(tempdir.path().join("src.txt")).unwrap();
+        let dst_file = File::create(tempdir.path().join("dst.txt")).unwrap();
 
-        #[test]
-        fn errors_on_redirect_of_closed_fd() {
-            // Arrange
-            let tempdir = tempfile::tempdir().unwrap();
-            let src_file = File::create(tempdir.path().join("src.txt")).unwrap();
-            let dst_file = File::create(tempdir.path().join("dst.txt")).unwrap();
+        let dst_file = ManuallyDrop::new(dst_file);
+        let fd = dst_file.as_raw_fd();
+        unsafe { close(fd) };
 
-            // Prevent Rust from auto-closing; we'll manage fd manually
-            let src_file = ManuallyDrop::new(src_file);
-            let fd = src_file.as_raw_fd();
-            unsafe { close(fd) }; // close underlying fd, making it invalid
+        // Act
+        let err = src_file.redirect(&*dst_file).unwrap_err();
 
-            // Act
-            let err = (&*src_file).redirect(&dst_file).unwrap_err();
-
-            // Assert
-            assert!(err.raw_os_error().is_some());
-        }
-
-        #[test]
-        fn errors_on_redirect_to_closed_fd() {
-            // Arrange
-            let tempdir = tempfile::tempdir().unwrap();
-            let src_file = File::create(tempdir.path().join("src.txt")).unwrap();
-            let dst_file = File::create(tempdir.path().join("dst.txt")).unwrap();
-
-            let dst_file = ManuallyDrop::new(dst_file);
-            let fd = dst_file.as_raw_fd();
-            unsafe { close(fd) };
-
-            // Act
-            let err = src_file.redirect(&*dst_file).unwrap_err();
-
-            // Assert
-            assert!(err.raw_os_error().is_some());
-        }
+        // Assert
+        assert!(err.raw_os_error().is_some());
     }
 }
