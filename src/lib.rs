@@ -49,6 +49,7 @@
 
 use std::io;
 use std::io::{Stdout, Stderr};
+use std::fs::{File, OpenOptions};
 
 /// A trait to represent entities that can have their I/O redirected to a specified target.
 ///
@@ -242,7 +243,6 @@ pub use platform::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::{File, OpenOptions};
     use std::io::{Read, Write};
     use std::mem::ManuallyDrop;
     use libc::close;
