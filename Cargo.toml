@@ -1,5 +1,6 @@
 [package]
 name = "io-redirect"
+description = "Cross-platform I/O redirection"
 version = "0.0.1"
 authors = ["Mehmet Akbulut"]
 edition = "2021"
