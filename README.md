@@ -25,7 +25,7 @@ fn main() {
 
 ## Contributing
 
-This project is maintained by Mehmet Akbulut and everyone are welcome to contribute.
+This project is maintained by Mehmet Akbulut. Everyone is welcome to contribute.
 
 Feel free to open an issue or a pull request. Please do not submit any PRs with proprietary content.
 
