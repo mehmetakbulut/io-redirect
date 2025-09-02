@@ -3,45 +3,34 @@ name: Rust
 on:
   push:
     branches: [ "main" ]
+    tags:
+      - 'v*.*.*'
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-linux-x86_64:
-    runs-on: ubuntu-24.04
+  build:
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      matrix:
+        platform: [ubuntu-24.04, ubuntu-24.04-arm, windows-2022, windows-11-arm]
     steps:
       - uses: actions/checkout@v4
       - name: Build
         run: cargo build --verbose
       - name: Run tests
         run: cargo test --verbose
-
-  build-linux-aarch64:
-    runs-on: ubuntu-24.04-arm
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build
-        run: cargo build --verbose
-      - name: Run tests
-        run: cargo test --verbose
-
-  build-windows-x86_64:
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build
-        run: cargo build --verbose
-      - name: Run tests
-        run: cargo test --verbose
-
-  build-windows-aarch64:
-    runs-on: windows-11-arm
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build
-        run: cargo build --verbose
-      - name: Run tests
-        run: cargo test --verbose
+      - name: Publish
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
