@@ -24,9 +24,10 @@
 //! For a more detailed example, see the `selftest` executable.
 //!
 //! ### File to File
-//! ```ignore
+//! ```no_run
 //! use io_redirect::Redirectable;
-//! use std::fs::File;
+//! # use std::fs::File;
+//!
 //! let mut file_src = File::create("src.txt").unwrap();
 //! let file_dst = File::create("dst.txt").unwrap();
 //!
@@ -34,12 +35,18 @@
 //! ```
 //!
 //! ### Redirect Standard Streams to a File
-//! ```ignore
-//! let some_path = PathBuf::new("/dev/kmsg".into());
+//! ```no_run
+//! use io_redirect::redirect_std_to_path;
+//! # use std::io::stdout;
+//! # use std::path::PathBuf;
 //!
+//! let some_path = PathBuf::from("/dev/kmsg");
+//!
+//! // redirect both stdout and stderr to the same file
 //! redirect_std_to_path(some_path.as_path(), true).unwrap();
 //!
 //! // or just one stream
+//! # use io_redirect::Redirectable;
 //! stdout().redirect(some_path.as_path()).unwrap();
 //! ```
 //!
@@ -76,7 +83,7 @@ pub trait Redirectable<T: ?Sized>
     /// ```no_run
     /// use io_redirect::Redirectable;
     ///
-    /// let source = std::io::stdout();
+    /// let mut source = std::io::stdout();
     /// let destination = std::fs::File::create("dst.txt").unwrap();
     /// match source.redirect(&destination) {
     ///     Ok(_) => println!("Redirection successful!"),
