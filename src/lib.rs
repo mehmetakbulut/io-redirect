@@ -10,12 +10,15 @@
 //! | -         | -                 | -            | -                     | -                |
 //! | Unix-like | `libc_on_unix`    | Yes          | Yes                   | Yes              |
 //! | Windows   | `windows-sys`     | No           | Yes                   | No               |
-//! | Windows   | `libc_on_windows` | Yes          | Yes                   | Yes              |
+//! | Windows   | `libc_on_windows` | Yes          | No                    | No               |
 //!
-//! On Unix-like systems such as Linux and macOS, the default is `libc_on_unix`.
-//! On Windows, the default is `windows-sys`.
+//! All features are enabled by default on all platforms.
 //!
-//! <div class="warning">`libc_on_windows` feature is experimental! It should not be relied on.</div>
+//! <div class="warning">
+//! On Windows, `Redirectable<T>` trait accepts any `T` that can be converted into a handle.
+//! Be careful not to feed handles without file semantics such as a thread handle.
+//! Also, if the handle is being directly used elsewhere, it won't benefit from redirection.
+//! </div>
 //!
 //! ## Usage
 //! For a more detailed example, see the `selftest` executable.
@@ -25,7 +28,7 @@
 //! use io_redirect::Redirectable;
 //! use std::fs::File;
 //! let mut file_src = File::create("src.txt").unwrap();
-//! let mut file_dst = File::create("dst.txt").unwrap();
+//! let file_dst = File::create("dst.txt").unwrap();
 //!
 //! file_src.redirect(&file_dst).unwrap();
 //! ```
@@ -83,7 +86,7 @@ pub trait Redirectable<T: ?Sized>
     ///
     /// # Notes
     /// The behavior of this function depends on the implementation.
-    fn redirect(&self, destination: &T) -> io::Result<()>;
+    fn redirect(&mut self, destination: &T) -> io::Result<()>;
 }
 
 #[cfg(any(unix))]
@@ -98,10 +101,10 @@ mod platform
     impl<T: AsRawFd> Descriptable for T {}
 
     impl<T1: Descriptable, T2: Descriptable> Redirectable<T2> for T1 {
-        fn redirect(&self, destination: &T2) -> io::Result<()> {
+        fn redirect(&mut self, destination: &T2) -> io::Result<()> {
             let src_fd = self.as_raw_fd();
             let dst_fd = destination.as_raw_fd();
-            return crate::libc_common::redirect_fd_to_fd(src_fd, dst_fd);
+            return libc_common::redirect_fd_to_fd(src_fd, dst_fd);
         }
     }
 }
@@ -118,14 +121,15 @@ mod platform
     #[cfg(feature = "libc_on_windows")]
     mod libc_backend
     {
+        use std::os::windows::io::RawHandle;
         use super::*;
         use crate::{Descriptable, Redirectable};
-        use libc::{c_int, open_osfhandle};
+        use libc::{c_int, get_osfhandle, open_osfhandle};
 
         pub type Descriptor = c_int;
 
-        impl<T1: Descriptable, T2: Descriptable> Redirectable<T2> for T1 {
-            fn redirect(&self, destination: &T2) -> io::Result<()> {
+        impl<T: Descriptable> Redirectable<T> for File {
+            fn redirect(&mut self, destination: &T) -> io::Result<()> {
                 let src_handle = self.as_raw_handle() as isize;
                 let dst_handle = destination.as_raw_handle() as isize;
 
@@ -139,7 +143,19 @@ mod platform
                     return Err(io::Error::last_os_error());
                 }
 
-                return crate::libc_common::redirect_fd_to_fd(src_fd, dst_fd);
+                libc_common::redirect_fd_to_fd(src_fd, dst_fd)?;
+
+                let new_src_handle = unsafe { get_osfhandle(src_fd) };
+                if new_src_handle < 0 {
+                    return Err(io::Error::last_os_error());
+                }
+
+                unsafe {
+                    let handle_ptr = (self as *mut File) as *mut RawHandle;
+                    *handle_ptr = new_src_handle as RawHandle;
+                }
+
+                return Ok(());
             }
         }
     }
@@ -155,13 +171,13 @@ mod platform
         use windows_sys::Win32::System::Console::{SetStdHandle, STD_ERROR_HANDLE, STD_HANDLE, STD_OUTPUT_HANDLE};
 
         impl<T: Descriptable> Redirectable<T> for Stdout {
-            fn redirect(&self, destination: &T) -> io::Result<()> {
+            fn redirect(&mut self, destination: &T) -> io::Result<()> {
                 redirect_using_setstdhandle(STD_OUTPUT_HANDLE, destination)
             }
         }
 
         impl<T: Descriptable> Redirectable<T> for Stderr {
-            fn redirect(&self, destination: &T) -> io::Result<()> {
+            fn redirect(&mut self, destination: &T) -> io::Result<()> {
                 redirect_using_setstdhandle(STD_ERROR_HANDLE, destination)
             }
         }
@@ -208,8 +224,9 @@ mod libc_convenience
     use std::fs::OpenOptions;
     use std::path::Path;
 
-    impl<T: Descriptable> Redirectable<Path> for T {
-        fn redirect(&self, destination: &Path) -> io::Result<()> {
+
+    impl<T: Redirectable<File>> Redirectable<Path> for T {
+        fn redirect(&mut self, destination: &Path) -> io::Result<()> {
             let dst = OpenOptions::new().read(false).write(true).create(true).append(true).open(destination)?;
             let result = self.redirect(&dst);
             if result.is_ok() {
@@ -305,7 +322,7 @@ mod tests {
         // Arrange
         let tempdir = tempfile::tempdir().unwrap();
         let dir_path = tempdir.path();
-        let src = File::create(dir_path.join("somefile.txt")).unwrap();
+        let mut src = File::create(dir_path.join("somefile.txt")).unwrap();
 
         // Act
         let err = src.redirect(dir_path).unwrap_err();
@@ -319,7 +336,7 @@ mod tests {
     fn errors_on_redirect_with_missing_parent_directory() {
         // Arrange
         let tempdir = tempfile::tempdir().unwrap();
-        let src = File::create(tempdir.path().join("s.txt")).unwrap();
+        let mut src = File::create(tempdir.path().join("s.txt")).unwrap();
         let bad_path = tempdir.path().join("no_such_dir").join("f.txt");
 
         // Act
@@ -335,7 +352,7 @@ mod tests {
         use std::os::fd::AsRawFd;
         // Arrange
         let tempdir = tempfile::tempdir().unwrap();
-        let src_file = File::create(tempdir.path().join("src.txt")).unwrap();
+        let mut src_file = File::create(tempdir.path().join("src.txt")).unwrap();
         let dst_file = File::create(tempdir.path().join("dst.txt")).unwrap();
 
         let dst_file = ManuallyDrop::new(dst_file);
